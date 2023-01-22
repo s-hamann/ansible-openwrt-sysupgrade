@@ -1,0 +1,40 @@
+---
+- name: 'Install python'
+  community.general.opkg:
+    name: "{{ item }}"
+    state: installed
+  loop:
+    - python3-light
+    - python3-logging
+    - python3-urllib
+
+- name: 'Install sysupgrade.py'
+  ansible.builtin.copy:
+    dest: '/usr/sbin/sysupgrade.py'
+    src: sysupgrade.py
+    owner: root
+    group: root
+    mode: 0755
+  register: _install_sysupgrade_py
+
+- name: 'Keep sysupgrade.py on upgrades'
+  ansible.builtin.lineinfile:
+    path: '/etc/sysupgrade.conf'
+    line: '/usr/sbin/sysupgrade.py'
+
+- name: 'Run initialization steps'  # noqa no-handler
+  ansible.builtin.command: '/usr/sbin/sysupgrade.py init'
+  when: '_install_sysupgrade_py is changed'
+
+- name: 'Configure regular sysupgrade checks'
+  ansible.builtin.cron:
+    name: sysupgrade.py
+    job: '/usr/sbin/sysupgrade.py check'
+    user: root
+    state: present
+    minute: "{{ openwrt_sysupgrade_check_frequency.split()[0] }}"
+    hour: "{{ openwrt_sysupgrade_check_frequency.split()[1] }}"
+    day: "{{ openwrt_sysupgrade_check_frequency.split()[2] }}"
+    month: "{{ openwrt_sysupgrade_check_frequency.split()[3] }}"
+    weekday: "{{ openwrt_sysupgrade_check_frequency.split()[4] }}"
+  when: 'openwrt_sysupgrade_check_frequency is defined'

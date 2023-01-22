@@ -1,0 +1,28 @@
+[tool.pylint.main]
+load-plugins = pylint.extensions.bad_builtin, pylint.extensions.docparams, pylint.extensions.docstyle, pylint.extensions.for_any_all
+
+[tool.pylint.reports]
+output-format = colorized
+
+[tool.pylint."messages control"]
+
+disable = logging-fstring-interpolation, too-many-lines
+enable = useless-suppression
+
+[tool.pylint.basic]
+good-names = i, j, k, ex, f, _
+
+[tool.pylint.format]
+ignore-long-lines = "^\\s*(# )?<?https?://\\S+>?$|^.{,99}  # type: ignore"
+max-line-length = 99
+
+[tool.pylint.string]
+check-quote-consistency = true
+check-str-concat-over-line-jumps = true
+
+[tool.pylint.parameter_documentation]
+accept-no-param-doc = false
+accept-no-raise-doc = false
+accept-no-return-doc = false
+accept-no-yields-doc = false
+default-docstring-type = google

@@ -1,0 +1,17 @@
+---
+galaxy_info:
+  author: 'Sebastian Hamann'
+  description: 'Manage OpenWrt upgrades easily and with minimal downtime on x86.'
+
+  license: MIT
+
+  min_ansible_version: '2.10'
+
+  platforms:
+    - name: GenericLinux
+
+  galaxy_tags:
+    - openwrt
+    - sysupgrade
+
+dependencies: []
