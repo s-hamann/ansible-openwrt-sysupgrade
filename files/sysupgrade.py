@@ -145,7 +145,29 @@ class ArchiveError(Exception):
 
 
 class OpkgError(Exception):
-    """Exception for all errors related to failed opkg operations."""
+    """Exception for all errors related to failed opkg operations.
+
+    Args:
+        action: The opkg action that failed.
+        root_dir: Root directory that opkg operated on.
+        returncode: Exit status of opkg.
+        cmd: opkg command that caused the exception.
+        stdout: Stdout output of opkg.
+        stderr: Stderr output of opkg.
+    """
+
+    def __init__(
+        self, action: str, root_dir: Path, returncode: int, cmd: str, stdout: str, stderr: str
+    ):
+        self.action = action
+        self.root_dir = root_dir
+        self.returncode = returncode
+        self.cmd = cmd
+        self.stdout = stdout
+        self.stderr = stderr
+
+    def __str__(self) -> str:
+        return f"Could not {self.action} in {self.root_dir}:\n{self.stderr}"
 
 
 class Version:
@@ -427,13 +449,27 @@ def install(packages: str | t.Sequence[str], root_dir: Path = Path("/")) -> None
         try:
             run(["opkg", *opkg_opts, "update"])
         except subprocess.CalledProcessError as ex:
-            raise OpkgError(f"Could not update package lists in {root_dir}:\n{ex.stderr}") from ex
+            raise OpkgError(
+                action="update package lists",
+                root_dir=root_dir,
+                returncode=ex.returncode,
+                cmd=ex.cmd,
+                stdout=ex.stdout,
+                stderr=ex.stderr,
+            ) from ex
     # Install the packages.
     debug(f"Installing the following package(s) in {root_dir}: {', '.join(packages)}")
     try:
         run(["opkg", *opkg_opts, "install", *packages])
     except subprocess.CalledProcessError as ex:
-        raise OpkgError(f"Could not install package(s) in {root_dir}:\n{ex.stderr}") from ex
+        raise OpkgError(
+            action="install package(s)",
+            root_dir=root_dir,
+            returncode=ex.returncode,
+            cmd=ex.cmd,
+            stdout=ex.stdout,
+            stderr=ex.stderr,
+        ) from ex
 
 
 def ubus_invoke(
