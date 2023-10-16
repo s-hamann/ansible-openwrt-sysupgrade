@@ -1265,6 +1265,8 @@ def copy_packages(target_dir: Path) -> None:
     This function installs all currently installed packages that were manually installed
     (i.e. not as a dependency of another package) and are not already installed in the target
     directory.
+    Furthermore, it resolves package conflicts by removing conflicting packages from the
+    installation in the target directory.
 
     Args:
         target_dir: Target directory for package installation. Needs to contain an OpenWrt
@@ -1316,6 +1318,38 @@ def copy_packages(target_dir: Path) -> None:
                 continue
             # Not skipped, note it for installation.
             custom_packages.append(pkg)
+        # Check custom packages for conflicts with existing packages (from the default
+        # installation). Unfortunately, we can not rely on the 'Conflicts' property of packages
+        # for this, because some conflicting packages do not set it,
+        # e.g. odhcpd vs. odhcpd-ipv6only.
+        # Therefore, we simulate installation and parse opkg's error messages instead.
+        conflicting_packages: list[str] = []
+        try:
+            # Simulate installation of the "user installed" packages on the new partition.
+            install(custom_packages, target_dir, no_action=True)
+        except OpkgError as ex:
+            # Parse the output of opkg to find conflicting packages.
+            for line in ex.stderr.splitlines():
+                line = line.strip().strip("*").strip()
+                # Proper package conflicts.
+                if line.startswith("check_conflicts_for:"):
+                    pkg = line[20:].strip()
+                    if pkg not in conflicting_packages:
+                        conflicting_packages.append(pkg)
+                # Data file clashes, i.e. packages want to install the same files.
+                elif line.startswith("But that file is already provided by package"):
+                    pkg = line[44:].strip().strip("*").strip()
+                    if pkg not in conflicting_packages:
+                        conflicting_packages.append(pkg)
+
+        if conflicting_packages:
+            # Remove (default) packages from the new partition that conflict with a package we
+            # want to install.
+            info(
+                f"Removing conflicting packages from new installation: {', '.join(conflicting_packages)}"
+            )
+            uninstall(conflicting_packages, target_dir)
+
         # Install the "user installed" packages on the new partition.
         install(custom_packages, target_dir)
     finally:
