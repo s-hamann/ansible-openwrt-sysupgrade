@@ -413,12 +413,16 @@ def run(cmd: t.Sequence[str | Path], text: bool = True, **kwargs: t.Any) -> str 
     return t.cast(bytes, result)
 
 
-def install(packages: str | t.Sequence[str], root_dir: Path = Path("/")) -> None:
+def install(
+    packages: str | t.Sequence[str], root_dir: Path = Path("/"), no_action: bool = False
+) -> None:
     """Install the given package(s) using `opkg`.
 
     Args:
         packages: A package name or list of package names to install.
         root_dir: The root directory where the packages should be installed.
+        no_action: Do not install packages but test only. Passes the --noaction flag to opkg.
+            Still raises an exception on error.
 
     Raises:
         OpkgError: opkg returned an error.
@@ -457,8 +461,11 @@ def install(packages: str | t.Sequence[str], root_dir: Path = Path("/")) -> None
                 stdout=ex.stdout,
                 stderr=ex.stderr,
             ) from ex
+    if no_action:
+        opkg_opts.append("--noaction")
+    else:
+        debug(f"Installing the following package(s) in {root_dir}: {', '.join(packages)}")
     # Install the packages.
-    debug(f"Installing the following package(s) in {root_dir}: {', '.join(packages)}")
     try:
         run(["opkg", *opkg_opts, "install", *packages])
     except subprocess.CalledProcessError as ex:
