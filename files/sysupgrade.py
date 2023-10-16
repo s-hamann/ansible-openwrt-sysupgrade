@@ -479,6 +479,36 @@ def install(
         ) from ex
 
 
+def uninstall(packages: str | t.Sequence[str], root_dir: Path = Path("/")) -> None:
+    """Uninstall the given package(s) using `opkg`.
+
+    Args:
+        packages: A package name or list of package names to remove.
+        root_dir: The root directory from which the packages should be removed.
+
+    Raises:
+        OpkgError: opkg returned an error.
+    """
+    if isinstance(packages, str):
+        packages = [packages]
+    opkg_opts: list[str | Path] = []
+    if root_dir != Path("/"):
+        opkg_opts += ["--offline-root", root_dir, "--conf", root_dir / "etc" / "opkg.conf"]
+    debug(f"Removing the following package(s) from {root_dir}: {', '.join(packages)}")
+    # Remove the packages.
+    try:
+        run(["opkg", *opkg_opts, "remove", *packages])
+    except subprocess.CalledProcessError as ex:
+        raise OpkgError(
+            action="remove package(s)",
+            root_dir=root_dir,
+            returncode=ex.returncode,
+            cmd=ex.cmd,
+            stdout=ex.stdout,
+            stderr=ex.stderr,
+        ) from ex
+
+
 def ubus_invoke(
     path: str, method: str, message: t.Optional[t.Mapping[str, "JSON"]] = None
 ) -> dict[str, "JSON"]:
