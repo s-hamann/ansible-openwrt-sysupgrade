@@ -414,7 +414,7 @@ def run(cmd: t.Sequence[str | Path], text: bool = True, **kwargs: t.Any) -> str 
 
 
 def install(
-    packages: str | t.Sequence[str], root_dir: Path = Path("/"), no_action: bool = False
+    packages: str | t.Iterable[str], root_dir: Path = Path("/"), no_action: bool = False
 ) -> None:
     """Install the given package(s) using `opkg`.
 
@@ -479,7 +479,7 @@ def install(
         ) from ex
 
 
-def uninstall(packages: str | t.Sequence[str], root_dir: Path = Path("/")) -> None:
+def uninstall(packages: str | t.Iterable[str], root_dir: Path = Path("/")) -> None:
     """Uninstall the given package(s) using `opkg`.
 
     Args:
