@@ -1281,6 +1281,7 @@ def copy_packages(target_dir: Path) -> None:
     installed_packages = {
         line.split(" - ")[0] for line in run(["opkg", "list-installed"]).splitlines()
     }
+    debug(f"Currently installed packages: {' '.join(installed_packages)}")
     # Mount /tmp on the new root partition as opkg requires it.
     try:
         run(["mount", "-o", "nosuid,nodev,noatime", "-t", "tmpfs", "tmpfs", target_dir / "tmp"])
@@ -1318,6 +1319,7 @@ def copy_packages(target_dir: Path) -> None:
                 continue
             # Not skipped, note it for installation.
             custom_packages.add(pkg)
+        debug(f"Manually installed packages: {' '.join(custom_packages)}")
         # Check custom packages for conflicts with existing packages (from the default
         # installation). Unfortunately, we can not rely on the 'Conflicts' property of packages
         # for this, because some conflicting packages do not set it,
@@ -1334,11 +1336,13 @@ def copy_packages(target_dir: Path) -> None:
                 # Proper package conflicts.
                 if line.startswith("check_conflicts_for:"):
                     pkg = line[20:].strip()
+                    debug(f"{pkg} conflicts with packages to be installed.")
                     if pkg not in conflicting_packages:
                         conflicting_packages.add(pkg)
                 # Data file clashes, i.e. packages want to install the same files.
                 elif line.startswith("But that file is already provided by package"):
                     pkg = line[44:].strip().strip("*").strip()
+                    debug(f"Files from {pkg} clash with packages to be installed.")
                     if pkg not in conflicting_packages:
                         conflicting_packages.add(pkg)
 
@@ -1346,7 +1350,8 @@ def copy_packages(target_dir: Path) -> None:
             # Remove (default) packages from the new partition that conflict with a package we
             # want to install.
             info(
-                f"Removing conflicting packages from new installation: {', '.join(conflicting_packages)}"
+                "Removing conflicting packages from new installation: "
+                f"{', '.join(conflicting_packages)}"
             )
             uninstall(conflicting_packages, target_dir)
 
