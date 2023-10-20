@@ -1278,9 +1278,9 @@ def copy_packages(target_dir: Path) -> None:
     """
     info("Copying installed packages from current installation.")
     # Get all installed packages.
-    installed_packages = [
+    installed_packages = {
         line.split(" - ")[0] for line in run(["opkg", "list-installed"]).splitlines()
-    ]
+    }
     # Mount /tmp on the new root partition as opkg requires it.
     try:
         run(["mount", "-o", "nosuid,nodev,noatime", "-t", "tmpfs", "tmpfs", target_dir / "tmp"])
@@ -1289,7 +1289,7 @@ def copy_packages(target_dir: Path) -> None:
     try:
         # opkg also requires /var/lock (which is symlinked to /tmp).
         (target_dir / "var/lock").mkdir(mode=1777)
-        custom_packages: list[str] = []
+        custom_packages: set[str] = set()
         for pkg in installed_packages:
             # Skip packages that are not explicitly installed, but merely to satisfy a dependency,
             # i.e. those that opkg does not call "user installed".
@@ -1317,13 +1317,13 @@ def copy_packages(target_dir: Path) -> None:
             if "install" in status:
                 continue
             # Not skipped, note it for installation.
-            custom_packages.append(pkg)
+            custom_packages.add(pkg)
         # Check custom packages for conflicts with existing packages (from the default
         # installation). Unfortunately, we can not rely on the 'Conflicts' property of packages
         # for this, because some conflicting packages do not set it,
         # e.g. odhcpd vs. odhcpd-ipv6only.
         # Therefore, we simulate installation and parse opkg's error messages instead.
-        conflicting_packages: list[str] = []
+        conflicting_packages: set[str] = set()
         try:
             # Simulate installation of the "user installed" packages on the new partition.
             install(custom_packages, target_dir, no_action=True)
@@ -1335,12 +1335,12 @@ def copy_packages(target_dir: Path) -> None:
                 if line.startswith("check_conflicts_for:"):
                     pkg = line[20:].strip()
                     if pkg not in conflicting_packages:
-                        conflicting_packages.append(pkg)
+                        conflicting_packages.add(pkg)
                 # Data file clashes, i.e. packages want to install the same files.
                 elif line.startswith("But that file is already provided by package"):
                     pkg = line[44:].strip().strip("*").strip()
                     if pkg not in conflicting_packages:
-                        conflicting_packages.append(pkg)
+                        conflicting_packages.add(pkg)
 
         if conflicting_packages:
             # Remove (default) packages from the new partition that conflict with a package we
