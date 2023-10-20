@@ -1259,7 +1259,12 @@ def copy_config_files(target_dir: Path) -> None:
         extract_tarfile(Path(tmpdir) / "backup.tar.gz", target_dir)
 
 
-def copy_packages(target_dir: Path) -> None:
+def copy_packages(
+    target_dir: Path,
+    add_packages: t.Iterable[str] | None = None,
+    skip_packages: t.Iterable[str] | None = None,
+    remove_packages: t.Iterable[str] | None = None,
+) -> None:
     """Install currently installed packages on the installation in the target directory.
 
     This function installs all currently installed packages that were manually installed
@@ -1271,6 +1276,10 @@ def copy_packages(target_dir: Path) -> None:
     Args:
         target_dir: Target directory for package installation. Needs to contain an OpenWrt
             installation.
+        add_packages: Additional packages to install in the target directory.
+        skip_packages: Packages from the current installation that shall not be installed to the
+            target directory.
+        remove_packages: Packages to remove from the target directory before installing packages.
 
     Raises:
         OSError: Mounting or unmounting /tmp in the target rootfs failed.
@@ -1282,6 +1291,15 @@ def copy_packages(target_dir: Path) -> None:
         line.split(" - ")[0] for line in run(["opkg", "list-installed"]).splitlines()
     }
     debug(f"Currently installed packages: {' '.join(installed_packages)}")
+    if skip_packages:
+        installed_packages.difference_update(skip_packages)
+        debug(f"Currently installed packages excluding skipped: {' '.join(installed_packages)}")
+    if remove_packages:
+        installed_packages.difference_update(remove_packages)
+        debug(
+            "Currently installed packages not scheduled for removal: "
+            f"{' '.join(installed_packages)}"
+        )
     # Mount /tmp on the new root partition as opkg requires it.
     try:
         run(["mount", "-o", "nosuid,nodev,noatime", "-t", "tmpfs", "tmpfs", target_dir / "tmp"])
@@ -1320,6 +1338,12 @@ def copy_packages(target_dir: Path) -> None:
             # Not skipped, note it for installation.
             custom_packages.add(pkg)
         debug(f"Manually installed packages: {' '.join(custom_packages)}")
+        if add_packages:
+            custom_packages.update(add_packages)
+            debug(f"Manually installed and additional packages: {' '.join(custom_packages)}")
+        if remove_packages:
+            info(f"Removing packages from new installation: {', '.join(remove_packages)}")
+            uninstall(remove_packages, target_dir)
         # Check custom packages for conflicts with existing packages (from the default
         # installation). Unfortunately, we can not rely on the 'Conflicts' property of packages
         # for this, because some conflicting packages do not set it,
@@ -1596,7 +1620,7 @@ def upgrade(args: argparse.Namespace) -> int:
             copy_config_files(root_dir)
 
             # Install custom packages from the current installation.
-            copy_packages(root_dir)
+            copy_packages(root_dir, args.add_packages, args.skip_packages, args.remove_packages)
 
     # Add the new installation to grub.cfg.
     add_to_grub(args.version)
@@ -1692,6 +1716,21 @@ def main() -> t.NoReturn:
         help="Change the partition size for the new installation to this value. "
         "Prefix with +/- to use the size of the current root partition increased/decrease by "
         "this number.",
+    )
+    parser_upgrade.add_argument(
+        "--add-packages",
+        nargs="+",
+        help="Install the given packages to the new installation during upgrade.",
+    )
+    parser_upgrade.add_argument(
+        "--skip-packages",
+        nargs="+",
+        help="Do not copy these packages from the current installtion to the new one.",
+    )
+    parser_upgrade.add_argument(
+        "--remove-packages",
+        nargs="+",
+        help="Remove the given packages from the new installation before installing packages.",
     )
     parser_upgrade.set_defaults(func=upgrade)
 
