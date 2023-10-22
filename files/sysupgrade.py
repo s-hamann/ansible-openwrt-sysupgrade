@@ -1643,7 +1643,6 @@ def upgrade(args: argparse.Namespace) -> int:
             raise FilesystemError(f"Unsupported root filesystem {root_filesystem}.")
 
         with mount(new_root_partition) as root_dir:
-
             # Install the rootfs files to the new partition.
             debug(f"Installing OpenWrt {args.version} to {new_root_partition}.")
             extract_tarfile(rootfs_path, root_dir)
