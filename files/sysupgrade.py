@@ -1388,6 +1388,38 @@ def copy_packages(
             raise OSError(f"Could not unmount tmpfs on {target_dir / 'tmp'}:\n{ex.stderr}") from ex
 
 
+def copy_service_states(target_dir: Path) -> None:
+    """Disable currently disabled services in the installation in the target directory.
+
+    This function disables services in the target directory, that are also disabled in the
+    current installation. It does not change services, that are not part of the current
+    installation.
+    Since OpenWrt enables all services by default, there is no need to change services to
+    enabled state in the target directory.
+
+    Args:
+        target_dir: Target directory for service manipulation. Needs to contain an OpenWrt
+            installation.
+    """
+    info("Copying service states from current installation.")
+    services = {
+        name.removeprefix("/etc/init.d/"): state
+        for (name, state) in [line.split()[0:2] for line in run(["service"]).splitlines()]
+    }
+    disabled_services = {service for service, state in services.items() if state == "disabled"}
+    debug(f"The following services are currently disabled: {', '.join(disabled_services)}")
+    for service in disabled_services:
+        if (target_dir / "etc" / "init.d" / service).exists():
+            debug(f"Disabling service {service}.")
+            # Remove the symlinks to the service's init script.
+            for symlink in (target_dir / "etc" / "rc.d").glob(f"[SK]??{service}"):
+                if symlink.is_symlink() and symlink.readlink() == Path(f"../init.d/{service}"):
+                    debug(f"Removing symlink {symlink}.")
+                    symlink.unlink()
+                else:
+                    warning(f"{symlink} should be a symlink to ../init.d/{service} but is not.")
+
+
 def add_to_grub(version: Version) -> None:
     """Add an entry in the grub menu for the given OpenWrt version.
 
@@ -1621,6 +1653,9 @@ def upgrade(args: argparse.Namespace) -> int:
 
             # Install custom packages from the current installation.
             copy_packages(root_dir, args.add_packages, args.skip_packages, args.remove_packages)
+
+            # Copy service states.
+            copy_service_states(root_dir)
 
     # Add the new installation to grub.cfg.
     add_to_grub(args.version)
