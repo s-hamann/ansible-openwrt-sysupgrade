@@ -1731,20 +1731,39 @@ def main() -> t.NoReturn:
     subs = parser.add_subparsers(dest="action", title="action", required=True)
 
     parser_init = subs.add_parser(
-        "init", help="Prepare the system for managing OpenWrt upgrades using this script."
+        "init",
+        help="Prepare the system for managing OpenWrt upgrades using this script.",
+        description="Prepare the system for managing OpenWrt upgrades using this script.",
     )
     parser_init.set_defaults(func=init)
 
-    parser_list = subs.add_parser("list", help="List installed versions of OpenWrt.")
+    parser_list = subs.add_parser(
+        "list",
+        help="List installed versions of OpenWrt.",
+        description="List installed versions of OpenWrt.",
+    )
     parser_list.set_defaults(func=list_versions)
 
     parser_check = subs.add_parser(
-        "check", help="Check if a newer release of OpenWrt is available."
+        "check",
+        help="Check if a newer release of OpenWrt is available.",
+        description="Check if a newer release of OpenWrt is available. Return exit code 1 if an "
+        "upgrade is available.",
     )
     parser_check.set_defaults(func=check)
 
-    parser_upgrade = subs.add_parser("upgrade", help="Upgrade to the given version of OpenWrt.")
-    parser_upgrade.add_argument("version", nargs="?", type=Version)
+    parser_upgrade = subs.add_parser(
+        "upgrade",
+        help="Upgrade to the given version of OpenWrt.",
+        description="Upgrade to the given version of OpenWrt, keeping configuration, "
+        "installed packages and system service states.",
+    )
+    parser_upgrade.add_argument(
+        "version",
+        nargs="?",
+        type=Version,
+        help="OpenWrt version to upgrade to (default: latest version).",
+    )
     parser_upgrade.add_argument(
         "--size",
         help="Change the partition size for the new installation to this value. "
@@ -1769,9 +1788,13 @@ def main() -> t.NoReturn:
     parser_upgrade.set_defaults(func=upgrade)
 
     parser_remove = subs.add_parser(
-        "remove", help="Remove one or more old installations of OpenWrt."
+        "remove",
+        help="Remove one or more old installations of OpenWrt.",
+        description="Remove one or more old installations of OpenWrt.",
     )
-    parser_remove.add_argument("version", nargs="+", type=Version)
+    parser_remove.add_argument(
+        "version", nargs="+", type=Version, help="Version number to remove."
+    )
     parser_remove.set_defaults(func=remove)
 
     def _non_negative_int(value: str) -> int:
@@ -1780,7 +1803,12 @@ def main() -> t.NoReturn:
             raise argparse.ArgumentTypeError("can not be negative")
         return result
 
-    parser_prune = subs.add_parser("prune", help="Remove the oldest installations of OpenWrt.")
+    parser_prune = subs.add_parser(
+        "prune",
+        help="Remove the oldest installations of OpenWrt.",
+        description="Remove the oldest installations of OpenWrt. Will not remove the currently "
+        "running version.",
+    )
     parser_prune.add_argument(
         "--keep",
         "-k",
