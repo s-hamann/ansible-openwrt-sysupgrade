@@ -313,6 +313,10 @@ debug = logging.getLogger(__name__).debug
 info = logging.getLogger(__name__).info
 warning = logging.getLogger(__name__).warning
 error = logging.getLogger(__name__).error
+# Make the logging module silently ignore exceptions caused by logging itself,
+# rather than printing a trace to stderr.
+# This is relevant when the syslog service is not running.
+logging.raiseExceptions = False
 
 
 def bytes_to_human(number: int, decimal_places: int = 1) -> str:
