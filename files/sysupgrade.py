@@ -1494,7 +1494,7 @@ def init(args: argparse.Namespace) -> int:
     """
     info("Preparing system for OpenWrt upgrade management.")
     # Install dependencies.
-    install(["lsblk", "parted"])
+    install(["lsblk", "parted", "kexec"])
     # Get some information about the partitions and filesystems.
     kernel_partition = get_kernel_partition()
     root_partition = get_root_partition()
@@ -1710,6 +1710,67 @@ def prune(args: argparse.Namespace) -> int:
     return 0
 
 
+def reboot(args: argparse.Namespace) -> int:
+    """Boot into another installation of OpenWrt.
+
+    More specifically, we use kexec rather than a full reboot, since it bypasses the bootloader
+    and allows us to choose the kernel we want to boot into.
+
+    Args:
+        args: Command line arguments as parsed by argparse.
+
+    Returns:
+        Does not return anything on success. Returns an integer > 0 on error.
+
+    Raises:
+        VersionError: Given version is not installed or unable to find a grub menu entry for it.
+    """
+    version = args.version
+    installed_versions = get_installed_versions()
+    if version is None:
+        # Assume latest installed version if no version is given.
+        version = installed_versions[-1]
+    elif version not in installed_versions:
+        raise VersionError(f"Can not reboot into OpenWrt {version}: Version not installed.")
+
+    # Get the kernel command line for the given menu entry from grub.cfg.
+    with mount(get_kernel_partition()) as boot_dir:
+        with open(boot_dir / "boot" / "grub" / "grub.cfg", "r", encoding="utf-8") as f:
+            grub_cfg = f.read()
+    # Extract all grub menu entries for the given OpenWrt version.
+    menu_entries = re.finditer(
+        rf"linux\s+/boot/vmlinuz-{re.escape(str(version))}\s+(?P<cmdline>\S.*)$",
+        grub_cfg,
+        flags=re.MULTILINE,
+    )
+    # Get the first kernel command line that does not look like failsafe mode.
+    # There should be exactly one candidate.
+    kernel_cmdline = None
+    for entry in menu_entries:
+        if "failsafe=true" in entry.group("cmdline"):
+            continue
+        kernel_cmdline = entry.group("cmdline")
+        break
+    if kernel_cmdline is None:
+        raise VersionError(f"Could not find menu entry in grub.cfg for OpenWrt {str(version)}.")
+
+    info(f"Rebooting into OpenWrt {str(version)}.")
+
+    # Prepare for kexec: Load the new kernel and command line.
+    run(["kexec", "--load", f"/boot/vmlinuz-{version}", "--append", kernel_cmdline])
+
+    # Stop all system services (that would be stopped on a proper shutdown, that is).
+    # Note that this will also bring down the network. (Debug) output just stops at that point
+    # when called via SSH or similar. However, the reboot completes nonetheless and there isn't
+    # much we can do to keep the user informed about progress.
+    for service in sorted(Path("/etc/rc.d").glob("K*")):
+        debug(f"Stopping service {service}.")
+        run([service, "stop"])
+
+    # Reboot.
+    run(["kexec", "--exec"])
+
+
 def main() -> t.NoReturn:
     """Main entry point into the script."""
     parser = argparse.ArgumentParser(
@@ -1821,6 +1882,19 @@ def main() -> t.NoReturn:
         help="Keep this many old versions (default: %(default)s).",
     )
     parser_prune.set_defaults(func=prune)
+
+    parser_remove = subs.add_parser(
+        "reboot",
+        help="Boot into another installations of OpenWrt.",
+        description="Boot into another installations of OpenWrt.",
+    )
+    parser_remove.add_argument(
+        "version",
+        type=Version,
+        nargs="?",
+        help="Version number to boot into (default: latest installed version).",
+    )
+    parser_remove.set_defaults(func=reboot)
 
     args = parser.parse_args()
 
