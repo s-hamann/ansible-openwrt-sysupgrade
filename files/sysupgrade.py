@@ -774,10 +774,10 @@ def get_latest_version() -> Version:
 def get_kernel_partition() -> Path:
     """Get and return the device of the partition containing the kernel and boot loader.
 
-    The partition is detected by the file system's label, which needs to be `kernel`. This is the
-    case for x86 OpenWrt images, at least. If this does not return exactly one result, the
-    partition is detected by the `boot` or `esp` partition flags. If this does not return exactly
-    one result either, an exception is raised.
+    The partition is detected by the file system's label or the partition label, either of which
+    needs to be `kernel`. This is the case for x86 OpenWrt images, at least. If this does not
+    return exactly one result, the partition is detected by the `boot` or `esp` partition flags.
+    If this does not return exactly one result either, an exception is raised.
 
     Returns:
         The path of the device node of the partition that contains the OpenWrt kernel and boot
@@ -787,9 +787,11 @@ def get_kernel_partition() -> Path:
         PartitionError: The kernel device could not be uniquely identified.
     """
     debug("Getting kernel and boot loader partition.")
-    partitions = lsblk(["PATH", "LABEL", "PARTFLAGS", "PARTTYPE"])
+    partitions = lsblk(["PATH", "LABEL", "PARTLABEL", "PARTFLAGS", "PARTTYPE"])
     # Get the partitions that are labeled as `kernel`.
-    kernel_partitions = [p for p in partitions if p["label"] == "kernel"]
+    kernel_partitions = [
+        p for p in partitions if p["label"] == "kernel" or p["partlabel"] == "kernel"
+    ]
     if len(kernel_partitions) == 1:
         result = Path(kernel_partitions[0]["path"])
         debug(f"Kernel and boot loader partition is {result}.")
