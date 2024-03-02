@@ -1306,92 +1306,78 @@ def copy_packages(
             "Currently installed packages not scheduled for removal: "
             f"{' '.join(installed_packages)}"
         )
-    # Mount /tmp on the new root partition as opkg requires it.
+    custom_packages: set[str] = set()
+    for pkg in installed_packages:
+        # Skip packages that are not explicitly installed, but merely to satisfy a dependency,
+        # i.e. those that opkg does not call "user installed".
+        status = run(["opkg", "status", pkg])
+        if "user installed" not in status:
+            continue
+        # Skip packages that are not marked as "user installed", but have other installed
+        # packages depending on them.
+        reverse_deps = run(["opkg", "whatdepends", pkg])
+        if not reverse_deps.splitlines()[-1].startswith("What depends on"):
+            continue
+        # Skip packages that are already installed on the new partition (because they
+        # are part of the default installation).
+        status = run(
+            [
+                "opkg",
+                "--offline-root",
+                target_dir,
+                "--conf",
+                target_dir / "etc" / "opkg.conf",
+                "status",
+                pkg,
+            ]
+        )
+        if "install" in status:
+            continue
+        # Not skipped, note it for installation.
+        custom_packages.add(pkg)
+    debug(f"Manually installed packages: {' '.join(custom_packages)}")
+    if add_packages:
+        custom_packages.update(add_packages)
+        debug(f"Manually installed and additional packages: {' '.join(custom_packages)}")
+    if remove_packages:
+        info(f"Removing packages from new installation: {', '.join(remove_packages)}")
+        uninstall(remove_packages, target_dir)
+    # Check custom packages for conflicts with existing packages (from the default installation).
+    # Unfortunately, we can not rely on the 'Conflicts' property of packages for this,
+    # because some conflicting packages do not set it, e.g. odhcpd vs. odhcpd-ipv6only.
+    # Therefore, we simulate installation and parse opkg's error messages instead.
+    conflicting_packages: set[str] = set()
     try:
-        run(["mount", "-o", "nosuid,nodev,noatime", "-t", "tmpfs", "tmpfs", target_dir / "tmp"])
-    except subprocess.CalledProcessError as ex:
-        raise OSError(f"Could not mount tmpfs on {target_dir / 'tmp'}:\n{ex.stderr}") from ex
-    try:
-        # opkg also requires /var/lock (which is symlinked to /tmp).
-        (target_dir / "var/lock").mkdir(mode=1777)
-        custom_packages: set[str] = set()
-        for pkg in installed_packages:
-            # Skip packages that are not explicitly installed, but merely to satisfy a dependency,
-            # i.e. those that opkg does not call "user installed".
-            status = run(["opkg", "status", pkg])
-            if "user installed" not in status:
-                continue
-            # Skip packages that are not marked as "user installed", but have other installed
-            # packages depending on them.
-            reverse_deps = run(["opkg", "whatdepends", pkg])
-            if not reverse_deps.splitlines()[-1].startswith("What depends on"):
-                continue
-            # Skip packages that are already installed on the new partition (because they
-            # are part of the default installation).
-            status = run(
-                [
-                    "opkg",
-                    "--offline-root",
-                    target_dir,
-                    "--conf",
-                    target_dir / "etc" / "opkg.conf",
-                    "status",
-                    pkg,
-                ]
-            )
-            if "install" in status:
-                continue
-            # Not skipped, note it for installation.
-            custom_packages.add(pkg)
-        debug(f"Manually installed packages: {' '.join(custom_packages)}")
-        if add_packages:
-            custom_packages.update(add_packages)
-            debug(f"Manually installed and additional packages: {' '.join(custom_packages)}")
-        if remove_packages:
-            info(f"Removing packages from new installation: {', '.join(remove_packages)}")
-            uninstall(remove_packages, target_dir)
-        # Check custom packages for conflicts with existing packages (from the default
-        # installation). Unfortunately, we can not rely on the 'Conflicts' property of packages
-        # for this, because some conflicting packages do not set it,
-        # e.g. odhcpd vs. odhcpd-ipv6only.
-        # Therefore, we simulate installation and parse opkg's error messages instead.
-        conflicting_packages: set[str] = set()
-        try:
-            # Simulate installation of the "user installed" packages on the new partition.
-            install(custom_packages, target_dir, no_action=True)
-        except OpkgError as ex:
-            # Parse the output of opkg to find conflicting packages.
-            for line in ex.stderr.splitlines():
-                line = line.strip().strip("*").strip()
-                # Proper package conflicts.
-                if line.startswith("check_conflicts_for:"):
-                    pkg = line[20:].strip()
-                    debug(f"{pkg} conflicts with packages to be installed.")
-                    if pkg not in conflicting_packages:
-                        conflicting_packages.add(pkg)
-                # Data file clashes, i.e. packages want to install the same files.
-                elif line.startswith("But that file is already provided by package"):
-                    pkg = line[44:].strip().strip("*").strip()
-                    debug(f"Files from {pkg} clash with packages to be installed.")
-                    if pkg not in conflicting_packages:
-                        conflicting_packages.add(pkg)
+        # Simulate installation of the "user installed" packages on the new partition.
+        install(custom_packages, target_dir, no_action=True)
+    except OpkgError as ex:
+        # Parse the output of opkg to find conflicting packages.
+        for line in ex.stderr.splitlines():
+            line = line.strip().strip("*").strip()
+            # Proper package conflicts.
+            if line.startswith("check_conflicts_for:"):
+                pkg = line[20:].strip()
+                debug(f"{pkg} conflicts with packages to be installed.")
+                if pkg not in conflicting_packages:
+                    conflicting_packages.add(pkg)
+            # Data file clashes, i.e. packages want to install the same files.
+            elif line.startswith("But that file is already provided by package"):
+                pkg = line[44:].strip().strip("*").strip()
+                debug(f"Files from {pkg} clash with packages to be installed.")
+                if pkg not in conflicting_packages:
+                    conflicting_packages.add(pkg)
 
-        if conflicting_packages:
-            # Remove (default) packages from the new partition that conflict with a package we
-            # want to install.
-            info(
-                "Removing conflicting packages from new installation: "
-                f"{', '.join(conflicting_packages)}"
-            )
-            uninstall(conflicting_packages, target_dir)
+    if conflicting_packages:
+        # Remove (default) packages from the new partition that conflict with a package we
+        # want to install.
+        info(
+            "Removing conflicting packages from new installation: "
+            f"{', '.join(conflicting_packages)}"
+        )
+        uninstall(conflicting_packages, target_dir)
 
-        # Install the "user installed" packages on the new partition.
-        install(custom_packages, target_dir)
-    finally:
-        try:
-            run(["umount", target_dir / "tmp"])
-        except subprocess.CalledProcessError as ex:
-            raise OSError(f"Could not unmount tmpfs on {target_dir / 'tmp'}:\n{ex.stderr}") from ex
+    # Install the "user installed" packages on the new partition.
+    install(custom_packages, target_dir)
 
 
 def copy_service_states(target_dir: Path) -> None:
@@ -1656,11 +1642,40 @@ def upgrade(args: argparse.Namespace) -> int:
             # Copy configuration files from the current installation.
             copy_config_files(root_dir)
 
-            # Install custom packages from the current installation.
-            copy_packages(root_dir, args.add_packages, args.skip_packages, args.remove_packages)
+            # Mount /tmp on the new root partition as opkg and service management require it.
+            try:
+                run(
+                    [
+                        "mount",
+                        "-o",
+                        "nosuid,nodev,noatime",
+                        "-t",
+                        "tmpfs",
+                        "tmpfs",
+                        root_dir / "tmp",
+                    ]
+                )
+            except subprocess.CalledProcessError as ex:
+                raise OSError(f"Could not mount tmpfs on {root_dir / 'tmp'}:\n{ex.stderr}") from ex
+            try:
+                # /var/lock is also nedded (/var is symlinked to /tmp).
+                (root_dir / "var/lock").mkdir(mode=1777)
 
-            # Copy service states.
-            copy_service_states(root_dir)
+                # Install custom packages from the current installation.
+                copy_packages(
+                    root_dir, args.add_packages, args.skip_packages, args.remove_packages
+                )
+
+                # Copy service states.
+                copy_service_states(root_dir)
+
+            finally:
+                try:
+                    run(["umount", root_dir / "tmp"])
+                except subprocess.CalledProcessError as ex:
+                    raise OSError(
+                        f"Could not unmount tmpfs on {root_dir / 'tmp'}:\n{ex.stderr}"
+                    ) from ex
 
     # Add the new installation to grub.cfg.
     add_to_grub(args.version)
