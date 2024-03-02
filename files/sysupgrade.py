@@ -1381,13 +1381,11 @@ def copy_packages(
 
 
 def copy_service_states(target_dir: Path) -> None:
-    """Disable currently disabled services in the installation in the target directory.
+    """Copy service states from the current installation to the target directory.
 
-    This function disables services in the target directory, that are also disabled in the
-    current installation. It does not change services, that are not part of the current
-    installation.
-    Since OpenWrt enables all services by default, there is no need to change services to
-    enabled state in the target directory.
+    This function enables/disables services in the target directory, that are also enabled/disabled
+    in the current installation.
+    It does not change services, that are not part of the current installation.
 
     Args:
         target_dir: Target directory for service manipulation. Needs to contain an OpenWrt
@@ -1398,18 +1396,14 @@ def copy_service_states(target_dir: Path) -> None:
         name.removeprefix("/etc/init.d/"): state
         for (name, state) in [line.split()[0:2] for line in run(["service"]).splitlines()]
     }
-    disabled_services = {service for service, state in services.items() if state == "disabled"}
-    debug(f"The following services are currently disabled: {', '.join(disabled_services)}")
-    for service in disabled_services:
+    for service, state in services.items():
         if (target_dir / "etc" / "init.d" / service).exists():
-            debug(f"Disabling service {service}.")
-            # Remove the symlinks to the service's init script.
-            for symlink in (target_dir / "etc" / "rc.d").glob(f"[SK]??{service}"):
-                if symlink.is_symlink() and symlink.readlink() == Path(f"../init.d/{service}"):
-                    debug(f"Removing symlink {symlink}.")
-                    symlink.unlink()
-                else:
-                    warning(f"{symlink} should be a symlink to ../init.d/{service} but is not.")
+            if state == "disabled":
+                debug(f"Disabling service {service}.")
+                run(["chroot", target_dir, f"/etc/init.d/{service}", "disable"])
+            elif state == "enabled":
+                debug(f"Enabling service {service}.")
+                run(["chroot", target_dir, f"/etc/init.d/{service}", "enable"])
 
 
 def add_to_grub(version: Version) -> None:
